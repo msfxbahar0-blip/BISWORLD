@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14213d">
+<title>Bisworld</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#14213d;--muted:#667085;--accent:#0e7c86;--line:#dde3ea;--mine:#d9f0f1;--danger:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1624;--card:#18223a;--ink:#eef2f8;--muted:#9aa7bd;--accent:#35b6c0;--line:#2a3652;--mine:#16444a;--danger:#ff8a80}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+#app{height:100%;display:flex;flex-direction:column;max-width:720px;margin:0 auto}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--ink);color:#fff}
+header h1{font-size:19px;margin:0;flex:1;letter-spacing:.2px}
+header button{background:transparent;border:1px solid #ffffff55;color:#fff;border-radius:8px;padding:6px 10px;font-size:14px}
+main{flex:1;overflow-y:auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+input,textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:6px 0}
+button.primary{width:100%;background:var(--accent);color:#fff;border:0;border-radius:10px;padding:13px;font:inherit;font-weight:600;margin-top:8px}
+button.link{background:none;border:0;color:var(--accent);font:inherit;padding:8px 0}
+.msg{color:var(--danger);font-size:14px;min-height:18px}
+.note{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.4}
+.room{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;color:var(--ink);font:inherit}
+.room b{display:block;font-size:16px}.room span{color:var(--muted);font-size:13px}
+#chat{display:flex;flex-direction:column;height:100%}
+#list{flex:1;overflow-y:auto;padding:12px 14px}
+.b{max-width:82%;padding:8px 12px;border-radius:14px;margin:6px 0;background:var(--card);border:1px solid var(--line);word-wrap:break-word}
+.b.me{margin-left:auto;background:var(--mine);border-color:transparent}
+.b small{display:block;color:var(--muted);font-size:11px;margin-bottom:2px}
+.b a{font-size:11px;color:var(--muted);margin-left:8px}
+#bar{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line);background:var(--card)}
+#bar input{margin:0}#bar button{background:var(--accent);color:#fff;border:0;border-radius:10px;padding:0 18px;font-weight:600}
+.warn{font-size:11px;color:var(--muted);text-align:center;padding:4px 12px 0;background:var(--card)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const SUPABASE_URL = "https://jktzyrpjkotxffbewkax.supabase.co";
+const SUPABASE_KEY = "sb_publishable_glHIAyt9kSvMUD_c-OF7gA_4LArpiF0";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const app = document.getElementById("app");
+let channel = null, user = null;
+
+const el = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+const shell = (title, right) => {
+  app.innerHTML = "";
+  const h = el(`<header><h1>${title}</h1></header>`);
+  if (right) h.appendChild(right);
+  app.appendChild(h);
+  return h;
+};
+
+function authScreen(mode = "login") {
+  shell("Bisworld");
+  const signup = mode === "signup";
+  const m = el(`<main><div class="card">
+    <h2 style="margin-top:0">${signup ? "Créer un compte" : "Se connecter"}</h2>
+    ${signup ? '<input id="u" placeholder="Nom d\'utilisateur" autocomplete="username">' : ""}
+    <input id="e" type="email" placeholder="Email" autocomplete="email">
+    <input id="p" type="password" placeholder="Mot de passe (6 caractères minimum)" autocomplete="${signup ? "new-password" : "current-password"}">
+    <div class="msg" id="err"></div>
+    <button class="primary" id="go">${signup ? "Créer mon compte" : "Se connecter"}</button>
+    <button class="link" id="sw">${signup ? "J'ai déjà un compte" : "Pas de compte ? S'inscrire"}</button>
+    ${signup ? '<p class="note">En créant un compte, vous acceptez les conditions d\'utilisation et la politique de confidentialité. Les discussions ne constituent pas des conseils financiers.</p>' : ""}
+  </div></main>`);
+  app.appendChild(m);
+  m.querySelector("#sw").onclick = () => authScreen(signup ? "login" : "signup");
+  m.querySelector("#go").onclick = async () => {
+    const err = m.querySelector("#err"); err.textContent = "";
+    const email = m.querySelector("#e").value.trim(), password = m.querySelector("#p").value;
+    if (signup) {
+      const username = m.querySelector("#u").value.trim();
+      if (username.length < 3) return err.textContent = "Le nom d'utilisateur doit avoir 3 caractères minimum.";
+      const { data, error } = await db.auth.signUp({ email, password, options: { data: { username } } });
+      if (error) return err.textContent = error.message;
+      if (!data.session) { err.style.color = "var(--accent)"; err.textContent = "Compte créé. Vérifiez votre email pour confirmer, puis connectez-vous."; }
+    } else {
+      const { error } = await db.auth.signInWithPassword({ email, password });
+      if (error) err.textContent = "Email ou mot de passe incorrect.";
+    }
+  };
+}
+
+async function roomsScreen() {
+  const out = el('<button>Déconnexion</button>');
+  out.onclick = () => db.auth.signOut();
+  shell("Salons", out);
+  const m = el("<main><p class='note' style='margin:0 0 12px'>Les discussions ne constituent pas des conseils financiers.</p></main>");
+  app.appendChild(m);
+  const { data, error } = await db.from("rooms").select("*").order("id");
+  if (error) { m.append(el(`<p class="msg">${error.message}</p>`)); return; }
+  data.forEach((r) => {
+    const b = el('<button class="room"><b></b><span></span></button>');
+    b.querySelector("b").textContent = r.name;
+    b.querySelector("span").textContent = r.description || "";
+    b.onclick = () => chatScreen(r);
+    m.appendChild(b);
+  });
+}
+
+async function chatScreen(room) {
+  const back = el("<button>Salons</button>");
+  back.onclick = () => { if (channel) db.removeChannel(channel); roomsScreen(); };
+  shell(room.name, back);
+  const c = el(`<div id="chat"><div id="list"></div>
+    <div class="warn">Pas de conseils financiers. Restez respectueux.</div>
+    <div id="bar"><input id="t" placeholder="Votre message" maxlength="1000"><button id="s">Envoyer</button></div></div>`);
+  app.appendChild(c);
+  const list = c.querySelector("#list");
+  const seen = new Set();
+  const add = (x) => {
+    if (seen.has(x.id)) return; seen.add(x.id);
+    const mine = x.user_id === user.id;
+    const d = el('<div class="b"><small></small><span></span></div>');
+    if (mine) d.classList.add("me");
+    d.querySelector("small").textContent = x.username;
+    d.querySelector("span").textContent = x.content;
+    if (!mine) {
+      const a = el('<a href="#">Signaler</a>');
+      a.onclick = async (e) => { e.preventDefault(); await db.from("reports").insert({ message_id: x.id }); a.textContent = "Signalé"; };
+      d.querySelector("small").appendChild(a);
+    }
+    list.appendChild(d); list.scrollTop = list.scrollHeight;
+  };
+  const { data } = await db.from("messages").select("*").eq("room_id", room.id).order("created_at", { ascending: false }).limit(100);
+  (data || []).reverse().forEach(add);
+  channel = db.channel("room-" + room.id)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: "room_id=eq." + room.id }, (p) => add(p.new))
+    .subscribe();
+  const send = async () => {
+    const i = c.querySelector("#t"), text = i.value.trim();
+    if (!text) return; i.value = "";
+    const { data: row, error } = await db.from("messages").insert({ room_id: room.id, content: text, username: user.user_metadata.username || "Membre" }).select().single();
+    if (error) alert(error.message); else add(row);
+  };
+  c.querySelector("#s").onclick = send;
+  c.querySelector("#t").onkeydown = (e) => { if (e.key === "Enter") send(); };
+}
+
+db.auth.onAuthStateChange((_e, session) => {
+  user = session ? session.user : null;
+  if (channel) { db.removeChannel(channel); channel = null; }
+  user ? roomsScreen() : authScreen();
+});
+</script>
+</body>
+</html>
